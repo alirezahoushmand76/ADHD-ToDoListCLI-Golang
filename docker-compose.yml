@@ -1,0 +1,20 @@
+version: '3.8'
+
+services:
+  todolist:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: todolist:latest
+    container_name: todolist
+    volumes:
+      # Mount the data directory to persist tasks between container restarts
+      - todolist_data:/home/appuser/.todolist
+    # The entrypoint is set in the Dockerfile, so we can pass commands directly
+    # For example: docker-compose run todolist add "New task"
+    stdin_open: true  # docker run -i
+    tty: true         # docker run -t
+
+volumes:
+  todolist_data:
+    # Named volume to persist data 
