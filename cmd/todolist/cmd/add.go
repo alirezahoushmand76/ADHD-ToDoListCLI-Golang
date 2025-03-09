@@ -22,65 +22,7 @@ var (
 		Use:   "add",
 		Short: "Add a new task",
 		Long:  `Add a new task to your to-do list with title, description, priority, category, due date, and reminder.`,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			// If no title is provided, use the first argument
-			if addTitle == "" && len(args) > 0 {
-				addTitle = args[0]
-			}
-
-			// Title is required
-			if addTitle == "" {
-				return fmt.Errorf("title is required (use --title or provide it as an argument)")
-			}
-
-			// Parse priority with validation
-			var priority models.Priority
-			switch strings.ToLower(addPriority) {
-			case "low":
-				priority = models.PriorityLow
-			case "medium":
-				priority = models.PriorityMedium
-			case "high":
-				priority = models.PriorityHigh
-			default:
-				return fmt.Errorf("invalid priority: %s (must be low, medium, or high)", addPriority)
-			}
-
-			// Parse category
-			category := models.Category(addCategory)
-			if category == "" {
-				category = models.Category("inbox")
-			}
-
-			// Parse due date
-			var dueDate time.Time
-			if addDueDate != "" {
-				var err error
-				dueDate, err = parseDateTime(addDueDate)
-				if err != nil {
-					return fmt.Errorf("invalid due date: %w (use format YYYY-MM-DD or 'today', 'tomorrow', 'next week')", err)
-				}
-			}
-
-			// Parse reminder
-			var reminderAt time.Time
-			if addReminder != "" {
-				var err error
-				reminderAt, err = parseDateTime(addReminder)
-				if err != nil {
-					return fmt.Errorf("invalid reminder: %w (use format YYYY-MM-DD or 'today', 'tomorrow', 'next week')", err)
-				}
-			}
-
-			// Add task
-			err := todoApp.AddTask(addTitle, addDescription, priority, category, dueDate, reminderAt)
-			if err != nil {
-				return fmt.Errorf("failed to add task: %w", err)
-			}
-
-			ui.PrintSuccess("Task added successfully: %s", addTitle)
-			return nil
-		},
+		RunE:  runAddCmd,
 		Example: `  todolist add "Complete project report" --priority high --category work --due tomorrow
   todolist add "Read book" --priority medium
   todolist add --title "Call doctor" --due "next week" --priority high`,
@@ -94,6 +36,84 @@ func init() {
 	addCmd.Flags().StringVarP(&addCategory, "category", "c", "inbox", "Task category")
 	addCmd.Flags().StringVar(&addDueDate, "due", "", "Due date (YYYY-MM-DD, today, tomorrow, next week)")
 	addCmd.Flags().StringVar(&addReminder, "reminder", "", "Reminder time (YYYY-MM-DD, today, tomorrow, next week)")
+}
+
+func runAddCmd(cmd *cobra.Command, args []string) error {
+	title := strings.Join(args, " ")
+	if title == "" {
+		return fmt.Errorf("title cannot be empty")
+	}
+
+	// Parse due date if provided
+	var dueDate time.Time
+	if addDueDate != "" {
+		var err error
+		dueDate, err = parseDateTime(addDueDate)
+		if err != nil {
+			return fmt.Errorf("invalid due date format: %w", err)
+		}
+	}
+
+	// Parse reminder time if provided
+	var reminderAt time.Time
+	if addReminder != "" {
+		var err error
+		reminderAt, err = parseDateTime(addReminder)
+		if err != nil {
+			return fmt.Errorf("invalid reminder time format: %w", err)
+		}
+	}
+
+	// Validate priority
+	priority := models.Priority(strings.ToLower(addPriority))
+	if priority != models.PriorityLow && priority != models.PriorityMedium && priority != models.PriorityHigh {
+		return fmt.Errorf("invalid priority: %s (must be low, medium, or high)", addPriority)
+	}
+
+	// Validate or create category
+	category := models.Category(strings.ToLower(addCategory))
+
+	var task *models.Task
+	var err error
+
+	if todoClient != nil {
+		// Use the client to add the task
+		task, err = todoClient.AddTask(
+			title,
+			addDescription,
+			priority,
+			category,
+			dueDate,
+			reminderAt,
+		)
+	} else {
+		// Use the app directly (legacy mode)
+		err = todoApp.AddTask(
+			title,
+			addDescription,
+			priority,
+			category,
+			dueDate,
+			reminderAt,
+		)
+		if err == nil {
+			// Get the task that was just added (this is a bit of a hack)
+			tasks, _ := todoApp.GetAllTasks()
+			if len(tasks) > 0 {
+				task = tasks[len(tasks)-1]
+			}
+		}
+	}
+
+	if err != nil {
+		return fmt.Errorf("failed to add task: %w", err)
+	}
+
+	ui.PrintSuccess("Task added successfully!")
+	if task != nil {
+		fmt.Println(task.String())
+	}
+	return nil
 }
 
 // parseDateTime parses a date or date-time string
